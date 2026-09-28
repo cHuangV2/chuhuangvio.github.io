@@ -372,20 +372,20 @@
     return h.getFile().then(function (f) { file.known = f.lastModified; }, function () {}).then(writeFile);
   }
 
-  function saveAsNewFile() {
-    if (!fsSupported) return downloadBackup();
+  function saveAsNewFile(note) {
+    if (!fsSupported) return downloadBackup(note);
     flush();
     return window.showSaveFilePicker({ suggestedName: '网文稿件.json', types: FILE_TYPES })
       .then(linkFile)
-      .then(function (ok) { if (ok) toast('已保存到电脑文件，之后会自动保存到这里'); })
+      .then(function (ok) { if (ok) toast(withNote('已保存到电脑文件，之后会自动保存到这里', note)); })
       .catch(function (e) { if (e.name !== 'AbortError') toast('保存失败：' + e.message); });
   }
 
   // 「保存」按钮 / Ctrl+S
-  function saveNow() {
+  function saveNow(note) {
     flush();
-    if (!fsSupported) return downloadBackup();
-    if (!file.handle) return saveAsNewFile();
+    if (!fsSupported) return downloadBackup(note);
+    if (!file.handle) return saveAsNewFile(note);
     if (file.conflict) { showConflict(file.conflict); return; }
     var h = file.handle;
     // requestPermission 必须在用户点击中直接调用
@@ -393,7 +393,7 @@
       if (p !== 'granted') { toast('没有获得写入权限'); return; }
       file.needPerm = false;
       clearTimeout(file.timer);
-      return writeFile().then(function (ok) { if (ok) toast('已保存到 ' + h.name); });
+      return writeFile().then(function (ok) { if (ok) toast(withNote('已保存到 ' + h.name, note)); });
     }).catch(function (e) { toast('保存失败：' + e.message); });
   }
 
@@ -524,7 +524,7 @@
     els.toast.textContent = msg;
     els.toast.classList.add('show');
     clearTimeout(toast.t);
-    toast.t = setTimeout(function () { els.toast.classList.remove('show'); }, 2200);
+    toast.t = setTimeout(function () { els.toast.classList.remove('show'); }, Math.min(5000, 2200 + msg.length * 40));
   }
 
   // ---------- 编辑 ----------
@@ -661,20 +661,53 @@
   $('more-btn').addEventListener('click', function (e) { e.stopPropagation(); toggleMenu(els.moreMenu, e.currentTarget); });
   document.addEventListener('click', function (e) { if (!e.target.closest('.menu')) closeMenus(); });
 
+  function safeName(name) { return name.replace(/[\\/:*?"<>|]/g, '_'); }
   function download(name, text, type) {
     var blob = new Blob([text], { type: type || 'text/plain;charset=utf-8' });
     var a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = name.replace(/[\\/:*?"<>|]/g, '_');
+    a.download = safeName(name);
     document.body.appendChild(a);
     a.click();
     setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
   }
 
-  function downloadBackup() {
+  function downloadBackup(note) {
     flush();
     download('网文备份-' + today() + '.json', JSON.stringify(state, null, 2), 'application/json');
-    toast(fsSupported ? '已下载备份' : '已下载备份文件（当前浏览器不支持直接写入文件，推荐用电脑版 Chrome / Edge）');
+    toast(withNote(fsSupported ? '已下载备份' : '已下载备份文件（当前浏览器不支持直接写入文件，推荐用电脑版 Chrome / Edge）', note));
+  }
+  function withNote(msg, note) { return typeof note === 'string' && note ? msg + '；' + note : msg; }
+
+  // ---------- 本章另存为 md ----------
+  // 文件名：第几章-章节名-保存时间.md，如「第3章-风起云涌-20260929-1530.md」
+  var CH_NO = /^\s*(第[0-9０-９零〇一二三四五六七八九十百千万两]+[章节回])\s*[:：、.．\-—_]*\s*/;
+  function chapterMdName(b, c) {
+    var title = c.title.trim();
+    var m = title.match(CH_NO);
+    var no = m ? m[1] : '第' + (b.chapters.indexOf(c) + 1) + '章';
+    var name = (m ? title.slice(m[0].length) : title).trim() || '无标题';
+    var d = new Date();
+    var time = today().replace(/-/g, '') + '-' + String(d.getHours()).padStart(2, '0') + String(d.getMinutes()).padStart(2, '0');
+    return safeName(no + '-' + name.replace(/\s+/g, ' ') + '-' + time + '.md');
+  }
+  function chapterMarkdown(c) {
+    // Markdown 里单个换行不分段，段落之间空一行
+    var paras = c.content.split('\n').filter(function (p) { return p.trim(); });
+    return '# ' + (c.title.trim() || '无标题') + '\n\n' + paras.join('\n\n') + '\n';
+  }
+  function saveChapterMd() {
+    var name = chapterMdName(book(), chapter());
+    download(name, chapterMarkdown(chapter()), 'text/markdown;charset=utf-8');
+    return name;
+  }
+
+  // 「保存」按钮 / Ctrl+S：保存整部稿件，同时把本章另存为 md
+  function saveClick() {
+    flush();
+    var note = '本章已另存为 ' + saveChapterMd();
+    toast(note);
+    return saveNow(note);
   }
 
   var actions = {
@@ -851,7 +884,7 @@
 
   document.addEventListener('keydown', function (e) {
     var mod = e.ctrlKey || e.metaKey;
-    if (mod && e.key.toLowerCase() === 's') { e.preventDefault(); saveNow(); }
+    if (mod && e.key.toLowerCase() === 's') { e.preventDefault(); saveClick(); }
     else if (mod && e.key.toLowerCase() === 'f') { e.preventDefault(); openFind(); }
     else if (e.key === 'Escape') {
       if (els.app.classList.contains('focus')) els.app.classList.remove('focus');
@@ -861,7 +894,7 @@
     }
   });
 
-  $('save-btn').addEventListener('click', saveNow);
+  $('save-btn').addEventListener('click', saveClick);
 
   window.addEventListener('beforeunload', function (e) {
     flush();

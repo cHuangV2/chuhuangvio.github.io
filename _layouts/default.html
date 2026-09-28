@@ -16,7 +16,7 @@
     <div class="wrap header-inner">
       <a class="brand" href="{{ '/' | relative_url }}">{{ site.title }}</a>
       <nav class="nav">
-        <a href="{{ '/articles/' | relative_url }}"{% if page.url contains '/articles/' or page.url == '/' %} class="active"{% endif %}>文章</a>
+        <a href="{{ '/articles/' | relative_url }}"{% if page.url contains '/articles/' %} class="active"{% endif %}>文章</a>
         <a href="{{ '/feed.xml' | relative_url }}">RSS</a>
       </nav>
     </div>

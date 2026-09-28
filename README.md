@@ -13,8 +13,11 @@
 layout: post
 title: 文章标题
 subtitle: 副标题（可选）
+cover: /assets/img/xxx.jpg  # 封面图（可选），显示在首页
 ---
 ```
+
+首页介绍区的文字在 `_config.yml` 的 `home:` 下修改。
 
 ## 目录
 

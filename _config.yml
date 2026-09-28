@@ -9,6 +9,16 @@ timezone: Asia/Shanghai
 
 github_username: cHuangV3
 
+# 首页介绍区
+home:
+  roles: 写作者 · 开发者 · 终身学习者
+  headline: 边学边写，
+  headline_em: 在公开处思考。
+  bio: 这里记录我在编程、阅读与生活里的所见所想。写下来，是为了想清楚。
+  section_title: 札记
+  section_em: 一本公开的笔记本
+  recent_count: 6
+
 # 文章地址形如 /articles/2026-09-28/hello-world/
 permalink: /articles/:year-:month-:day/:title/
 

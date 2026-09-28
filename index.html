@@ -1,9 +1,62 @@
 ---
 layout: default
 ---
-<section class="intro">
-  <h1>{{ site.title }}</h1>
-  <p>{{ site.tagline }}</p>
+{% assign total_chars = 0 %}
+{% for post in site.posts %}
+  {% assign n = post.content | strip_html | strip_newlines | remove: ' ' | size %}
+  {% assign total_chars = total_chars | plus: n %}
+{% endfor %}
+{% assign latest = site.posts.first %}
+
+<section class="hero">
+  <p class="hero-kicker">{{ site.author }} · {{ site.home.roles }}</p>
+  <h1 class="hero-title">{{ site.home.headline }}<em>{{ site.home.headline_em }}</em></h1>
+  <p class="hero-bio">{{ site.home.bio }}</p>
+
+  <dl class="stats">
+    <div><dt>文章</dt><dd>{{ site.posts.size }}<small> 篇</small></dd></div>
+    <div><dt>累计</dt><dd>{% if total_chars >= 10000 %}{{ total_chars | divided_by: 1000 | times: 1.0 | divided_by: 10 | round: 1 }}<small> 万字</small>{% else %}{{ total_chars }}<small> 字</small>{% endif %}</dd></div>
+    <div><dt>最近更新</dt><dd>{% if latest %}{{ latest.date | date: '%Y.%m.%d' }}{% else %}—{% endif %}</dd></div>
+  </dl>
 </section>
 
-{% include article-list.html %}
+<section class="journal">
+  <header class="section-head">
+    <h2>{{ site.home.section_title }} <em>— {{ site.home.section_em }}</em></h2>
+    <a href="{{ '/articles/' | relative_url }}">全部文章 →</a>
+  </header>
+
+  {% if latest %}
+  <a class="feature" href="{{ latest.url | relative_url }}">
+    {% if latest.cover %}<img class="feature-cover" src="{{ latest.cover | relative_url }}" alt="" loading="lazy">{% endif %}
+    <p class="feature-meta"><span class="badge">最新</span><time datetime="{{ latest.date | date_to_xmlschema }}">{{ latest.date | date: '%Y年%m月%d日' }}</time></p>
+    <h3 class="feature-title">{{ latest.title }}</h3>
+    <p class="feature-desc">{{ latest.subtitle | default: latest.excerpt | strip_html | strip_newlines | truncate: 120 }}</p>
+    <span class="read-more">阅读全文 →</span>
+  </a>
+  {% else %}
+  <p class="empty">还没有文章。</p>
+  {% endif %}
+
+  {% assign rest_limit = site.home.recent_count | minus: 1 %}
+  {% if site.posts.size > 1 %}
+  <ul class="recent">
+    {% for post in site.posts offset: 1 limit: rest_limit %}
+    <li>
+      <a href="{{ post.url | relative_url }}">
+        {% if post.cover %}<img src="{{ post.cover | relative_url }}" alt="" loading="lazy">{% endif %}
+        <div>
+          <time datetime="{{ post.date | date_to_xmlschema }}">{{ post.date | date: '%Y.%m.%d' }}</time>
+          <h3>{{ post.title }}</h3>
+          <p>{{ post.subtitle | default: post.excerpt | strip_html | strip_newlines | truncate: 80 }}</p>
+        </div>
+      </a>
+    </li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+
+  {% if site.posts.size > site.home.recent_count %}
+  <p class="more"><a href="{{ '/articles/' | relative_url }}">查看全部 {{ site.posts.size }} 篇文章 →</a></p>
+  {% endif %}
+</section>

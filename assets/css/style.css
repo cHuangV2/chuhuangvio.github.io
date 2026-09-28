@@ -77,6 +77,93 @@ main.wrap { flex: 1; padding-top: 48px; padding-bottom: 64px; }
 }
 .intro p { color: var(--muted); margin: 0; }
 
+/* Home: hero */
+.hero { padding: 24px 0 48px; border-bottom: 1px solid var(--line); margin-bottom: 48px; }
+.hero-kicker {
+  font-size: 13px;
+  letter-spacing: .04em;
+  color: var(--muted);
+  margin: 0 0 20px;
+}
+.hero-title {
+  font-family: var(--serif);
+  font-weight: 400;
+  font-size: 52px;
+  line-height: 1.15;
+  letter-spacing: -.01em;
+  margin: 0 0 20px;
+}
+.hero-title em { font-style: italic; color: var(--accent); }
+.hero-bio {
+  font-family: var(--serif);
+  font-size: 20px;
+  line-height: 1.7;
+  color: var(--muted);
+  max-width: 34em;
+  margin: 0 0 36px;
+}
+.stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  margin: 0;
+  border-top: 1px solid var(--fg);
+}
+.stats div { padding: 14px 16px 0 0; }
+.stats div + div { padding-left: 16px; border-left: 1px solid var(--line); }
+.stats dt { font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+.stats dd { margin: 0; font-family: var(--serif); font-size: 26px; font-variant-numeric: tabular-nums; }
+.stats small { font-family: var(--sans); font-size: 13px; color: var(--muted); }
+
+/* Home: journal */
+.section-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 24px;
+}
+.section-head h2 { font-family: var(--serif); font-weight: 400; font-size: 26px; margin: 0; }
+.section-head h2 em { color: var(--muted); font-size: 20px; }
+.section-head a { font-size: 14px; color: var(--muted); text-decoration: none; white-space: nowrap; }
+.section-head a:hover { color: var(--accent); }
+
+.feature {
+  display: block;
+  text-decoration: none;
+  padding: 28px;
+  background: var(--code-bg);
+  border-radius: 8px;
+  margin-bottom: 8px;
+  transition: background .15s ease;
+}
+.feature:hover { background: var(--line); }
+.feature-cover { width: 100%; aspect-ratio: 16 / 9; object-fit: cover; border-radius: 4px; margin-bottom: 20px; display: block; }
+.feature-meta { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--muted); margin: 0 0 12px; }
+.badge {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .05em;
+  color: var(--bg);
+  background: var(--accent);
+  padding: 2px 8px;
+  border-radius: 99px;
+}
+.feature-title { font-family: var(--serif); font-weight: 400; font-size: 32px; line-height: 1.25; margin: 0 0 12px; }
+.feature-desc { font-family: var(--serif); font-size: 18px; line-height: 1.7; color: var(--muted); margin: 0 0 20px; }
+.read-more { font-size: 14px; color: var(--accent); }
+.feature:hover .feature-title { color: var(--accent); }
+
+.recent { list-style: none; margin: 0; padding: 0; }
+.recent li { border-bottom: 1px solid var(--line); }
+.recent a { display: flex; gap: 20px; padding: 22px 0; text-decoration: none; }
+.recent img { width: 120px; height: 80px; object-fit: cover; border-radius: 4px; flex-shrink: 0; }
+.recent time { font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.recent h3 { font-family: var(--serif); font-weight: 400; font-size: 21px; line-height: 1.35; margin: 4px 0 6px; }
+.recent p { margin: 0; font-size: 15px; color: var(--muted); }
+.recent a:hover h3 { color: var(--accent); }
+.more { margin: 28px 0 0; font-size: 15px; }
+.more a { color: var(--accent); text-decoration: none; }
+
 /* Article list */
 .year-group { margin-bottom: 40px; }
 .year {
@@ -224,6 +311,14 @@ main.wrap { flex: 1; padding-top: 48px; padding-bottom: 64px; }
 @media (max-width: 560px) {
   main.wrap { padding-top: 32px; }
   .intro h1, .post-title { font-size: 30px; }
+  .hero { padding-top: 8px; }
+  .hero-title { font-size: 36px; }
+  .hero-bio { font-size: 18px; }
+  .stats dd { font-size: 20px; }
+  .stats div + div { padding-left: 12px; }
+  .feature { padding: 20px; }
+  .feature-title { font-size: 26px; }
+  .recent img { width: 88px; height: 64px; }
   .article-list a { grid-template-columns: 1fr auto; gap: 2px 12px; }
   .article-list time { grid-column: 1 / -1; }
   .post-body { font-size: 18px; }

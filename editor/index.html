@@ -114,6 +114,16 @@ title: 写作
     </aside>
   </div>
 
+  <dialog class="dialog" id="conflict" aria-labelledby="cf-title">
+    <h2 id="cf-title">稿件文件在别处被修改过</h2>
+    <p>「<b id="cf-name"></b>」和这个浏览器里的稿件不一样，可能在另一台电脑或另一个浏览器里写过。选择保留哪一份，另一份会自动下载为备份文件，不会丢。</p>
+    <div class="cf-options">
+      <button class="cf-opt" id="cf-file"><b>用文件里的版本</b><span id="cf-file-info"></span><i>较新</i></button>
+      <button class="cf-opt" id="cf-local"><b>用这个浏览器里的版本</b><span id="cf-local-info"></span><i>较新</i></button>
+    </div>
+    <div class="cf-foot"><button class="btn ghost" id="cf-later">稍后决定（暂停写入文件）</button></div>
+  </dialog>
+
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
   <script src="{{ '/assets/editor/editor.js' | relative_url }}"></script>

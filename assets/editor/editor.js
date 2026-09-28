@@ -15,7 +15,7 @@
     findbar: $('findbar'), findInput: $('find-input'), replaceInput: $('replace-input'),
     findCount: $('find-count'), replaceBook: $('replace-book'),
     bookMenu: $('book-menu'), moreMenu: $('more-menu'), indentState: $('indent-state'),
-    toast: $('toast'), restoreInput: $('restore-input')
+    toast: $('toast'), restoreInput: $('restore-input'), conflict: $('conflict')
   };
 
   // ---------- 数据 ----------
@@ -49,14 +49,17 @@
   // 两层保存：浏览器 localStorage 作即时缓存；关联了电脑文件时，再自动写入该文件
   var saveTimer = null;
   var storageOk = true;
-  function save() {
-    saveTimer = null;
+  function saveLocal() {
     try {
       localStorage.setItem(KEY, JSON.stringify(state));
       storageOk = true;
     } catch (e) {
       storageOk = false;
     }
+  }
+  function save() {
+    saveTimer = null;
+    saveLocal();
     queueFileWrite();
     renderSaveState();
   }
@@ -69,7 +72,8 @@
 
   // ---------- 保存到电脑文件 ----------
   var fsSupported = typeof window.showSaveFilePicker === 'function';
-  var file = { handle: null, dirty: false, writing: false, needPerm: false, timer: null, savedAt: null };
+  // known：上次读写该文件后它的 lastModified；conflict：待用户处理的版本冲突
+  var file = { handle: null, dirty: false, writing: false, needPerm: false, timer: null, savedAt: null, known: null, conflict: null };
   var FILE_TYPES = [{ description: '网文稿件', accept: { 'application/json': ['.json'] } }];
 
   // 文件句柄存进 IndexedDB，下次打开编辑器还能找到同一个文件
@@ -96,6 +100,7 @@
   function renderSaveState() {
     var t, cls = '';
     if (!storageOk && !file.handle) { t = '浏览器存储失败！请立即保存到文件'; cls = 'bad'; }
+    else if (file.handle && file.conflict) { t = file.handle.name + ' 在别处被修改，请选择保留哪一份'; cls = 'bad'; }
     else if (file.handle && file.needPerm) { t = '点「保存」继续写入 ' + file.handle.name; cls = 'warn'; }
     else if (saveTimer || file.dirty || file.writing) { t = '保存中…'; }
     else if (file.handle) { t = '✓ 已存到 ' + file.handle.name + (file.savedAt ? ' · ' + file.savedAt : ''); cls = 'ok'; }
@@ -114,21 +119,66 @@
     file.timer = setTimeout(writeFile, 1200);
   }
 
+  // 读、写文件依次排队，避免“检查”读到写了一半的状态
+  var fileChain = Promise.resolve();
+  function serial(fn) {
+    var p = fileChain.then(fn);
+    fileChain = p.catch(function () {});
+    return p;
+  }
+
+  // 防止旧稿覆盖新稿：每次写入文件都带一个版本号 syncRev，本地记住自己基于哪个版本。
+  // 写之前先看文件：版本号对不上（在另一台电脑、另一个浏览器里写过）就不写，交给用户选择。
+  // 返回 null 表示可以安全写入，否则返回冲突信息。
+  function checkFile(h) {
+    return h.getFile().then(function (f) {
+      if (file.known !== null && f.lastModified === file.known) return null; // 上次读写之后没被动过
+      if (!f.size) return null; // 刚新建的空文件
+      return f.text().then(function (text) {
+        var s = null;
+        try { s = JSON.parse(text); } catch (e) { /* 内容无法识别，按冲突处理 */ }
+        if (s && (!Array.isArray(s.books) || !s.books.length)) s = null;
+        if (s && (s.syncRev || null) === (state.syncRev || null) && (s.syncRev || sameBooks(s, state))) {
+          file.known = f.lastModified;
+          return null;
+        }
+        // 版本号不同但内容一样（比如同一份稿件被复制过），直接接上文件的版本号
+        if (s && sameBooks(s, state)) {
+          state.syncRev = s.syncRev;
+          saveLocal();
+          file.known = f.lastModified;
+          return null;
+        }
+        return { name: h.name, text: text, s: s, lastModified: f.lastModified };
+      });
+    });
+  }
+  function sameBooks(a, b) { return JSON.stringify(a.books) === JSON.stringify(b.books); }
+
   function writeFile() {
-    if (!file.handle || file.needPerm) return Promise.resolve(false);
-    if (file.writing) { queueFileWrite(); return Promise.resolve(false); }
+    if (!file.handle || file.needPerm || file.conflict) return Promise.resolve(false);
+    return serial(doWriteFile);
+  }
+  function doWriteFile() {
+    if (!file.handle || file.needPerm || file.conflict) return false;
     file.writing = true;
     file.dirty = false;
     renderSaveState();
-    var data = JSON.stringify(state, null, 2);
     var h = file.handle;
+    var rev = uid();
     return h.queryPermission({ mode: 'readwrite' }).then(function (p) {
       if (p !== 'granted') { file.needPerm = true; file.dirty = true; return false; }
-      return h.createWritable().then(function (w) {
-        return w.write(data).then(function () { return w.close(); });
-      }).then(function () {
-        file.savedAt = new Date().toLocaleTimeString('zh-CN', { hour12: false, hour: '2-digit', minute: '2-digit' });
-        return true;
+      return checkFile(h).then(function (c) {
+        if (c) { file.dirty = true; showConflict(c); return false; }
+        var data = JSON.stringify(Object.assign({}, state, { syncRev: rev }), null, 2);
+        return h.createWritable().then(function (w) {
+          return w.write(data).then(function () { return w.close(); });
+        }).then(function () {
+          state.syncRev = rev;
+          saveLocal();
+          file.savedAt = new Date().toLocaleTimeString('zh-CN', { hour12: false, hour: '2-digit', minute: '2-digit' });
+          return h.getFile().then(function (f) { file.known = f.lastModified; }, function () { file.known = null; });
+        }).then(function () { return true; });
       });
     }).catch(function (e) {
       file.dirty = true;
@@ -141,10 +191,105 @@
     });
   }
 
+  // 不写入，只看看文件有没有在别处被改过（打开编辑器、切回标签页时）
+  function checkFileNow() {
+    var h = file.handle;
+    if (!h || file.conflict) return Promise.resolve();
+    return serial(function () {
+      if (file.handle !== h || file.conflict) return;
+      return h.queryPermission({ mode: 'read' }).then(function (p) {
+        if (p !== 'granted') return;
+        return checkFile(h).then(function (c) { if (c) showConflict(c); });
+      }).catch(function () {});
+    });
+  }
+
+  // ---------- 版本冲突 ----------
+  function summary(s) {
+    var chars = 0, latest = 0;
+    s.books.forEach(function (b) {
+      b.chapters.forEach(function (c) {
+        chars += count(c.content);
+        if (c.updated > latest) latest = c.updated;
+      });
+    });
+    return { books: s.books.length, chars: chars, latest: latest };
+  }
+  function describe(x) {
+    return x.books + ' 部作品，共 ' + x.chars.toLocaleString('zh-CN') + ' 字' +
+      (x.latest ? '，最后修改于 ' + new Date(x.latest).toLocaleString('zh-CN', { hour12: false, month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '');
+  }
+
+  function showConflict(c) {
+    flush();
+    file.conflict = c;
+    var local = summary(state);
+    var remote = c.s ? summary(c.s) : null;
+    $('cf-name').textContent = c.name;
+    $('cf-local-info').textContent = describe(local);
+    $('cf-file-info').textContent = remote ? describe(remote) : '文件内容无法识别，不能载入';
+    $('cf-file').disabled = !remote;
+    // 标出最后修改时间更晚的一份
+    var newer = remote && remote.latest > local.latest ? 'cf-file' : 'cf-local';
+    $('cf-file').classList.toggle('newer', newer === 'cf-file');
+    $('cf-local').classList.toggle('newer', newer === 'cf-local');
+    renderSaveState();
+    if (!els.conflict.open) els.conflict.showModal();
+  }
+
+  function stamp() {
+    var d = new Date();
+    return today() + '-' + String(d.getHours()).padStart(2, '0') + String(d.getMinutes()).padStart(2, '0');
+  }
+
+  // 用文件里的版本：浏览器里的版本先下载成备份
+  function useFileVersion() {
+    var c = file.conflict;
+    if (!c || !c.s) return;
+    flush();
+    download('浏览器版本备份-' + stamp() + '.json', JSON.stringify(state, null, 2), 'application/json');
+    state = Object.assign(defaults(), c.s);
+    file.known = c.lastModified;
+    file.conflict = null;
+    file.dirty = false;
+    els.conflict.close();
+    renderAll(); saveLocal(); renderSaveState();
+    toast('已载入文件里的版本，浏览器里的旧版本已下载为备份');
+  }
+
+  // 用浏览器里的版本：文件里的版本先下载成备份，再覆盖文件
+  function useLocalVersion() {
+    var c = file.conflict;
+    if (!c) return;
+    var h = file.handle;
+    // requestPermission 必须在用户点击中直接调用
+    var perm = h.requestPermission({ mode: 'readwrite' });
+    download('文件版本备份-' + stamp() + '.json', c.text, 'application/json');
+    file.known = c.lastModified;
+    file.conflict = null;
+    els.conflict.close();
+    perm.then(function (p) {
+      if (p !== 'granted') { file.needPerm = true; renderSaveState(); toast('没有获得写入权限'); return; }
+      file.needPerm = false;
+      return writeFile().then(function (ok) { if (ok) toast('已用浏览器里的版本覆盖文件，文件里的旧版本已下载为备份'); });
+    }).catch(function (e) { toast('保存失败：' + e.message); });
+  }
+
+  // 稍后决定：暂停写入文件，下次点「保存」时再检查
+  function decideLater() {
+    if (!file.conflict) return;
+    file.conflict = null;
+    file.needPerm = true;
+    file.known = null;
+    if (els.conflict.open) els.conflict.close();
+    renderSaveState();
+  }
+
   function linkFile(h) {
-    file.handle = h; file.needPerm = false; file.savedAt = null;
+    file.handle = h; file.needPerm = false; file.savedAt = null; file.known = null; file.conflict = null;
     rememberHandle(h);
-    return writeFile();
+    // 「另存为」时用户已确认过替换所选文件，不再做冲突检查
+    return h.getFile().then(function (f) { file.known = f.lastModified; }, function () {}).then(writeFile);
   }
 
   function saveAsNewFile() {
@@ -161,6 +306,7 @@
     flush();
     if (!fsSupported) return downloadBackup();
     if (!file.handle) return saveAsNewFile();
+    if (file.conflict) { showConflict(file.conflict); return; }
     var h = file.handle;
     // requestPermission 必须在用户点击中直接调用
     return h.requestPermission({ mode: 'readwrite' }).then(function (p) {
@@ -175,13 +321,14 @@
     if (!fsSupported) { els.restoreInput.click(); return; }
     window.showOpenFilePicker({ types: FILE_TYPES }).then(function (hs) {
       var h = hs[0];
-      return h.getFile().then(function (f) { return f.text(); }).then(function (text) {
+      var modified = null;
+      return h.getFile().then(function (f) { modified = f.lastModified; return f.text(); }).then(function (text) {
         var s = JSON.parse(text);
         if (!s || !Array.isArray(s.books) || !s.books.length) throw new Error('不是网文稿件文件');
         if (!confirm('打开「' + h.name + '」（' + s.books.length + ' 部作品），替换编辑器里的当前内容？')) return;
         flush();
         state = Object.assign(defaults(), s);
-        file.handle = h; file.needPerm = true; file.savedAt = null;
+        file.handle = h; file.needPerm = true; file.savedAt = null; file.known = modified; file.conflict = null;
         rememberHandle(h);
         renderAll(); save();
         toast('已打开，点一次「保存」授权后会自动写回这个文件');
@@ -192,7 +339,7 @@
   function unlinkFile() {
     if (!file.handle) { toast('当前没有关联文件'); return; }
     var name = file.handle.name;
-    file.handle = null; file.dirty = false; file.needPerm = false;
+    file.handle = null; file.dirty = false; file.needPerm = false; file.known = null; file.conflict = null;
     clearTimeout(file.timer);
     rememberHandle(null);
     renderSaveState();
@@ -207,7 +354,11 @@
       return h.queryPermission({ mode: 'readwrite' }).then(function (p) {
         file.needPerm = p !== 'granted';
       });
-    }).catch(function () {}).then(renderSaveState);
+    }).catch(function () {}).then(function () {
+      renderSaveState();
+      // 能读就先看一眼文件，别让人在旧稿上继续写
+      return checkFileNow();
+    });
   }
 
   function book() {
@@ -634,7 +785,15 @@
     // 还有内容没写进电脑文件时，关闭前提醒
     if (file.handle && (file.dirty || file.writing || file.needPerm)) { e.preventDefault(); e.returnValue = ''; }
   });
-  document.addEventListener('visibilitychange', function () { if (document.hidden) flush(); });
+  document.addEventListener('visibilitychange', function () {
+    if (document.hidden) flush();
+    else checkFileNow(); // 切回来时，文件可能已在别处被改过
+  });
+
+  $('cf-file').addEventListener('click', useFileVersion);
+  $('cf-local').addEventListener('click', useLocalVersion);
+  $('cf-later').addEventListener('click', decideLater);
+  els.conflict.addEventListener('cancel', function (e) { e.preventDefault(); decideLater(); });
 
   // 其他标签页修改了数据时同步
   window.addEventListener('storage', function (e) {

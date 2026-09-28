@@ -15,7 +15,7 @@
     findbar: $('findbar'), findInput: $('find-input'), replaceInput: $('replace-input'),
     findCount: $('find-count'), replaceBook: $('replace-book'),
     bookMenu: $('book-menu'), moreMenu: $('more-menu'), indentState: $('indent-state'),
-    toast: $('toast'), restoreInput: $('restore-input'), conflict: $('conflict')
+    toast: $('toast'), restoreInput: $('restore-input'), importInput: $('import-input'), conflict: $('conflict')
   };
 
   // ---------- 数据 ----------
@@ -754,6 +754,7 @@
     'unlink-file': unlinkFile,
     'backup': downloadBackup,
     'restore': function () { els.restoreInput.click(); },
+    'import-chapters': function () { els.importInput.click(); },
     'font-down': function () { state.fontSize = Math.max(14, state.fontSize - 1); applySettings(); save(); },
     'font-up': function () { state.fontSize = Math.min(30, state.fontSize + 1); applySettings(); save(); },
     'toggle-indent': function () { state.autoIndent = !state.autoIndent; applySettings(); save(); },
@@ -772,6 +773,124 @@
     });
   });
   $('today-box').addEventListener('click', actions['set-goal']);
+
+  // ---------- 导入章节 ----------
+  // 支持 .txt / .md，可多选。一个文件里有多个「第X章」标题时自动拆成多章；
+  // 只有一章时，标题取文件里的「# 标题」或文件名（兼容「保存」另存的「第3章-风起云涌-20260929-1530.md」）。
+  var CN_DIGIT = { 零: 0, 〇: 0, 一: 1, 二: 2, 两: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9 };
+  var CN_UNIT = { 十: 10, 百: 100, 千: 1000, 万: 10000 };
+  function cnToNum(s) {
+    s = s.replace(/[０-９]/g, function (d) { return String.fromCharCode(d.charCodeAt(0) - 0xFEE0); });
+    if (/^\d+$/.test(s)) return parseInt(s, 10);
+    var total = 0, section = 0, digit = 0;
+    for (var i = 0; i < s.length; i++) {
+      var ch = s[i];
+      if (ch in CN_DIGIT) digit = CN_DIGIT[ch];
+      else if (ch === '万') { total += (section + digit) * 10000; section = 0; digit = 0; }
+      else if (ch in CN_UNIT) { section += (digit || 1) * CN_UNIT[ch]; digit = 0; }
+      else return NaN;
+    }
+    return total + section + digit;
+  }
+  function chapterNo(title) {
+    var m = title.match(/第([0-9０-９零〇一二三四五六七八九十百千万两]+)[章节回]/);
+    return m ? cnToNum(m[1]) : NaN;
+  }
+
+  // 单独成行的章节标题：「第12章 归来」「## 第十二章：归来」「番外 xx」；md 文件里的 # 标题也算
+  // 标题后面最多 30 个字，且不含句中标点，避免把「第一回合他就输了，……」这样的正文当成标题
+  var HEADING = /^\s*(?:#{1,6}\s*)?(第[0-9０-９零〇一二三四五六七八九十百千万两]+[章回](?:[\s:：、.．\-—_]*[^，。！？；,!?;]{0,30}))\s*$/;
+  var MD_HEADING = /^\s*#{1,6}\s+(.{1,40}?)\s*#*\s*$/;
+
+  function decodeText(buf) {
+    try { return new TextDecoder('utf-8', { fatal: true }).decode(buf); }
+    catch (e) { return new TextDecoder('gbk').decode(buf); } // Windows 记事本存的中文 txt 常是 GBK
+  }
+  function titleFromFileName(name) {
+    return name.replace(/\.(txt|md|markdown)$/i, '')
+      .replace(/\s*\(\d+\)$/, '')        // 浏览器重名下载加的「(1)」
+      .replace(/-\d{8}-\d{4}$/, '')      // 「保存」另存 md 时带的时间
+      .replace(/^(第[0-9０-９零〇一二三四五六七八九十百千万两]+[章节回])-/, '$1 ')
+      .trim();
+  }
+  function tidy(lines) {
+    // 与「一键排版」一致：去掉空行，段首统一缩进
+    return lines.map(function (l) { return state.autoIndent ? l.replace(/^[\s　]+|[\s　]+$/g, '') : l.replace(/\s+$/, ''); })
+      .filter(function (l) { return l.replace(/[\s　]/g, ''); })
+      .map(function (l) { return state.autoIndent ? INDENT + l : l; })
+      .join('\n');
+  }
+  function cleanTitle(t) {
+    return t.replace(/^\s*#+\s*/, '').replace(/^(第[0-9０-９零〇一二三四五六七八九十百千万两]+[章节回])[\s:：、.．\-—_]*/, '$1 ').trim();
+  }
+
+  function parseChapters(name, text) {
+    var isMd = /\.(md|markdown)$/i.test(name);
+    var lines = text.replace(/^\uFEFF/, '').replace(/\r\n?/g, '\n').split('\n');
+    var parts = [], cur = { title: null, lines: [] };
+    lines.forEach(function (l) {
+      var m = l.match(HEADING) || (isMd && l.match(MD_HEADING));
+      if (m) { parts.push(cur); cur = { title: cleanTitle(m[1]), lines: [] }; }
+      else cur.lines.push(l);
+    });
+    parts.push(cur);
+    var out = [];
+    parts.forEach(function (p, i) {
+      var content = tidy(p.lines);
+      if (p.title === null) {
+        // 第一个标题之前的文字：有内容才算一章，标题用文件名
+        if (content) out.push({ title: titleFromFileName(name), content: content });
+      } else if (content || i === parts.length - 1 || parts[i + 1].title === null) {
+        out.push({ title: p.title, content: content });
+      }
+      // 只有标题没有正文、后面紧跟下一个标题的（比如 md 里的书名），跳过
+    });
+    return out;
+  }
+
+  function readFileText(f) {
+    return new Promise(function (resolve, reject) {
+      var r = new FileReader();
+      r.onload = function () { resolve(decodeText(new Uint8Array(r.result))); };
+      r.onerror = function () { reject(r.error); };
+      r.readAsArrayBuffer(f);
+    });
+  }
+
+  els.importInput.addEventListener('change', function () {
+    var files = Array.prototype.slice.call(els.importInput.files);
+    els.importInput.value = '';
+    if (!files.length) return;
+    Promise.all(files.map(function (f) {
+      return readFileText(f).then(function (text) { return { name: f.name, chapters: parseChapters(f.name, text) }; });
+    })).then(function (list) {
+      // 多个文件按章号排序，没有章号的按文件名
+      list.sort(function (a, b) {
+        var na = a.chapters.length ? chapterNo(a.chapters[0].title) : NaN;
+        var nb = b.chapters.length ? chapterNo(b.chapters[0].title) : NaN;
+        if (!isNaN(na) && !isNaN(nb) && na !== nb) return na - nb;
+        if (isNaN(na) !== isNaN(nb)) return isNaN(na) ? 1 : -1;
+        return a.name.localeCompare(b.name, 'zh-CN', { numeric: true });
+      });
+      var chs = [];
+      list.forEach(function (x) { chs = chs.concat(x.chapters); });
+      if (!chs.length) { toast('文件里没有可导入的内容'); return; }
+      var b = book();
+      var chars = chs.reduce(function (n, c) { return n + count(c.content); }, 0);
+      var preview = chs.slice(0, 8).map(function (c) { return '· ' + c.title + '（' + count(c.content) + ' 字）'; }).join('\n') +
+        (chs.length > 8 ? '\n· ……' : '');
+      if (!confirm('导入 ' + chs.length + ' 章，共 ' + chars + ' 字，添加到《' + b.title + '》末尾？\n\n' + preview)) return;
+      flush();
+      // 作品里只有一个空白章节时，直接替换掉它
+      if (b.chapters.length === 1 && !count(b.chapters[0].content)) b.chapters = [];
+      var now = Date.now();
+      var added = chs.map(function (c) { return { id: uid(), title: c.title, content: c.content, updated: now }; });
+      b.chapters = b.chapters.concat(added);
+      state.chapterId = added[0].id;
+      renderAll(); save();
+      toast('已导入 ' + added.length + ' 章，共 ' + chars + ' 字');
+    }).catch(function (e) { alert('导入失败：' + e.message); });
+  });
 
   els.restoreInput.addEventListener('change', function () {
     var f = els.restoreInput.files[0];

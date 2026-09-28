@@ -52,6 +52,7 @@ title: 写作
       <hr class="fs-only">
       <button data-act="export-chapter">导出本章 TXT</button>
       <button data-act="export-book">导出全书 TXT</button>
+      <button data-act="import-chapters">导入章节（TXT / MD）…</button>
       <hr>
       <button data-act="backup">下载备份 (JSON)</button>
       <button data-act="restore">从备份恢复…</button>
@@ -62,6 +63,7 @@ title: 写作
       <button data-act="set-goal">设置日更目标…</button>
     </div>
     <input type="file" id="restore-input" accept="application/json,.json" hidden>
+    <input type="file" id="import-input" accept=".txt,.md,.markdown,text/plain,text/markdown" multiple hidden>
 
     <aside class="side" id="side">
       <div class="side-head">

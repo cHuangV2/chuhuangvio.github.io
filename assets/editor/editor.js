@@ -33,32 +33,65 @@
     return { v: 1, books: [b], bookId: b.id, chapterId: b.chapters[0].id, daily: {}, goal: 4000, fontSize: 19, autoIndent: true, sideOpen: true };
   }
 
-  var state = load();
+  var state = defaults(); // 真正的数据在 init() 里从浏览器存储异步读出
 
-  function load() {
+  function valid(s) { return s && Array.isArray(s.books) && s.books.length; }
+  function readLocalStorage(key) {
     try {
-      var raw = localStorage.getItem(KEY);
-      if (raw) {
-        var s = JSON.parse(raw);
-        if (s && Array.isArray(s.books) && s.books.length) return Object.assign(defaults(), s);
-      }
-    } catch (e) { /* 存储不可用时退回默认数据 */ }
-    return defaults();
+      var raw = localStorage.getItem(key);
+      return raw ? JSON.parse(raw) : null;
+    } catch (e) { return null; }
   }
 
-  // 两层保存：浏览器 localStorage 作即时缓存；关联了电脑文件时，再自动写入该文件
+  // 两层保存：浏览器 IndexedDB 作即时缓存（容量远大于 localStorage 的 5MB）；
+  // 关联了电脑文件时，再自动写入该文件。IndexedDB 不可用时退回 localStorage。
   var saveTimer = null;
   var storageOk = true;
+  var useIdb = !!window.indexedDB;
+  var PENDING = KEY + '-pending'; // 关页面时来不及写进 IndexedDB 的当前章节，临时放 localStorage
+  var channel = typeof BroadcastChannel === 'function' ? new BroadcastChannel('wn-editor') : null;
+  var tabId = uid();
+
+  function loadState() {
+    var fromLs = readLocalStorage(KEY);
+    if (!useIdb) return Promise.resolve(valid(fromLs) ? fromLs : null);
+    return idb('readonly', function (s) { return s.get('state'); }).then(function (s) {
+      if (valid(s)) return s;
+      if (!valid(fromLs)) return null;
+      // 首次升级：把 localStorage 里的稿件搬进 IndexedDB，确认写好后再删掉旧的
+      return idb('readwrite', function (st) { return st.put(fromLs, 'state'); }).then(function () {
+        try { localStorage.removeItem(KEY); } catch (e) { /* ignore */ }
+        return fromLs;
+      });
+    }, function () {
+      useIdb = false; // 隐私模式等情况下 IndexedDB 打不开
+      return valid(fromLs) ? fromLs : null;
+    });
+  }
+
   function saveLocal() {
-    try {
-      localStorage.setItem(KEY, JSON.stringify(state));
-      storageOk = true;
-    } catch (e) {
-      storageOk = false;
+    if (!useIdb) {
+      try {
+        localStorage.setItem(KEY, JSON.stringify(state));
+        storageOk = true;
+      } catch (e) {
+        storageOk = false;
+      }
+      return Promise.resolve(storageOk);
     }
+    return idb('readwrite', function (s) { return s.put(state, 'state'); }).then(function () {
+      storageOk = true;
+      try { localStorage.removeItem(PENDING); } catch (e) { /* ignore */ }
+      if (channel) channel.postMessage({ type: 'saved', from: tabId });
+      return true;
+    }, function () {
+      storageOk = false;
+      return false;
+    }).then(function (ok) { renderSaveState(); return ok; });
   }
   function save() {
     saveTimer = null;
+    if (!ready) return; // 稿件还没读出来，别用默认空稿覆盖它
     saveLocal();
     queueFileWrite();
     renderSaveState();
@@ -70,27 +103,74 @@
   }
   function flush() { if (saveTimer) { clearTimeout(saveTimer); save(); } }
 
+  // 关闭页面时 IndexedDB 的异步写入不一定来得及完成，
+  // 把正在写的章节（数据量小）同步存进 localStorage，下次打开时补回去
+  function savePending() {
+    if (!useIdb || !ready) return;
+    var b = book(), c = chapter();
+    try {
+      localStorage.setItem(PENDING, JSON.stringify({
+        bookId: b.id, notes: b.notes, chapterId: c.id, title: c.title, content: c.content, updated: c.updated
+      }));
+    } catch (e) { /* ignore */ }
+  }
+  function applyPending(s) {
+    var p = readLocalStorage(PENDING);
+    if (!p) return false;
+    var b = s.books.find(function (x) { return x.id === p.bookId; });
+    var c = b && b.chapters.find(function (x) { return x.id === p.chapterId; });
+    if (!c || !(p.updated > c.updated)) return false;
+    c.title = p.title; c.content = p.content; c.updated = p.updated;
+    b.notes = p.notes;
+    return true;
+  }
+
+  // 申请持久存储，降低浏览器在空间紧张或长期未访问时清掉稿件的可能
+  var persistAsked = false;
+  function askPersist() {
+    if (persistAsked) return;
+    persistAsked = true;
+    if (navigator.storage && navigator.storage.persist) {
+      navigator.storage.persisted().then(function (p) { if (!p) return navigator.storage.persist(); }).catch(function () {});
+    }
+  }
+
   // ---------- 保存到电脑文件 ----------
   var fsSupported = typeof window.showSaveFilePicker === 'function';
   // known：上次读写该文件后它的 lastModified；conflict：待用户处理的版本冲突
   var file = { handle: null, dirty: false, writing: false, needPerm: false, timer: null, savedAt: null, known: null, conflict: null };
   var FILE_TYPES = [{ description: '网文稿件', accept: { 'application/json': ['.json'] } }];
 
-  // 文件句柄存进 IndexedDB，下次打开编辑器还能找到同一个文件
+  // IndexedDB 里存两样东西：稿件（state）和关联的文件句柄（file）
+  var dbPromise = null;
+  function openDb() {
+    if (!dbPromise) {
+      dbPromise = new Promise(function (resolve, reject) {
+        var req = indexedDB.open('wn-editor', 1);
+        req.onupgradeneeded = function () { req.result.createObjectStore('kv'); };
+        req.onerror = function () { reject(req.error); };
+        req.onsuccess = function () {
+          var db = req.result;
+          db.onversionchange = function () { db.close(); dbPromise = null; };
+          resolve(db);
+        };
+      });
+      dbPromise.catch(function () { dbPromise = null; });
+    }
+    return dbPromise;
+  }
   function idb(mode, fn) {
-    return new Promise(function (resolve, reject) {
-      var req = indexedDB.open('wn-editor', 1);
-      req.onupgradeneeded = function () { req.result.createObjectStore('kv'); };
-      req.onerror = function () { reject(req.error); };
-      req.onsuccess = function () {
+    return openDb().then(function (db) {
+      return new Promise(function (resolve, reject) {
         var tx, r;
         try {
-          tx = req.result.transaction('kv', mode);
+          tx = db.transaction('kv', mode);
           r = fn(tx.objectStore('kv'));
         } catch (e) { reject(e); return; }
         tx.oncomplete = function () { resolve(r && r.result); };
         tx.onerror = function () { reject(tx.error); };
-      };
+        tx.onabort = function () { reject(tx.error || new Error('写入被中止')); }; // 空间不足时事务会被中止
+      });
     });
   }
   function rememberHandle(h) {
@@ -450,6 +530,8 @@
   // ---------- 编辑 ----------
   var lastLen = 0;
   function onTextChange() {
+    if (!ready) return;
+    askPersist();
     var c = chapter();
     c.content = els.text.value;
     c.updated = Date.now();
@@ -486,6 +568,7 @@
     }
   });
   els.text.addEventListener('focus', function () {
+    if (!ready) return;
     if (!els.text.value && state.autoIndent) replaceText(0, 0, INDENT);
   });
   ['keyup', 'click', 'select'].forEach(function (ev) {
@@ -782,11 +865,13 @@
 
   window.addEventListener('beforeunload', function (e) {
     flush();
+    savePending();
     // 还有内容没写进电脑文件时，关闭前提醒
     if (file.handle && (file.dirty || file.writing || file.needPerm)) { e.preventDefault(); e.returnValue = ''; }
   });
+  window.addEventListener('pagehide', function () { flush(); savePending(); });
   document.addEventListener('visibilitychange', function () {
-    if (document.hidden) flush();
+    if (document.hidden) { flush(); savePending(); }
     else checkFileNow(); // 切回来时，文件可能已在别处被改过
   });
 
@@ -795,14 +880,38 @@
   $('cf-later').addEventListener('click', decideLater);
   els.conflict.addEventListener('cancel', function (e) { e.preventDefault(); decideLater(); });
 
-  // 其他标签页修改了数据时同步
+  // 其他标签页修改了数据时同步（IndexedDB 模式靠 BroadcastChannel 通知，localStorage 模式靠 storage 事件）
+  function syncFromOtherTab(s) {
+    if (!valid(s)) return;
+    state = Object.assign(defaults(), s);
+    renderAll();
+    toast('已同步其他标签页的修改');
+  }
+  if (channel) {
+    channel.onmessage = function (e) {
+      if (!ready || !useIdb || !e.data || e.data.type !== 'saved' || e.data.from === tabId) return;
+      idb('readonly', function (s) { return s.get('state'); }).then(syncFromOtherTab, function () {});
+    };
+  }
   window.addEventListener('storage', function (e) {
-    if (e.key !== KEY || !e.newValue) return;
-    try { state = Object.assign(defaults(), JSON.parse(e.newValue)); renderAll(); toast('已同步其他标签页的修改'); } catch (err) { /* ignore */ }
+    if (useIdb || e.key !== KEY || !e.newValue) return;
+    try { syncFromOtherTab(JSON.parse(e.newValue)); } catch (err) { /* ignore */ }
   });
 
-  if (window.innerWidth < 800) state.sideOpen = false;
+  // ---------- 启动 ----------
+  var ready = false;
   if (!fsSupported) document.querySelectorAll('.fs-only').forEach(function (el) { el.hidden = true; });
-  renderAll();
-  restoreHandle();
+  // 稿件读出来之前不允许输入，免得写进默认的空白稿
+  els.text.readOnly = true; els.title.readOnly = true;
+  loadState().then(function (s) {
+    if (s) state = Object.assign(defaults(), s);
+    var recovered = applyPending(state);
+    if (window.innerWidth < 800) state.sideOpen = false;
+    ready = true;
+    els.text.readOnly = false; els.title.readOnly = false;
+    renderAll();
+    if (recovered) { saveLocal(); toast('已找回上次关闭页面前未保存的内容'); }
+    else if (!useIdb) renderSaveState();
+    restoreHandle();
+  });
 })();

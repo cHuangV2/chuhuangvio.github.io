@@ -30,7 +30,8 @@ title: 写作
         </div>
       </div>
       <div class="tb-right">
-        <span class="save-state" id="save-state">已保存</span>
+        <span class="save-state" id="save-state"></span>
+        <button class="btn primary" id="save-btn" title="保存到电脑文件 (Ctrl+S)">保存</button>
         <button class="btn ghost" id="format-btn" title="一键排版：去多余空白、首行缩进">排版</button>
         <button class="btn ghost" id="find-btn" title="查找替换 (Ctrl+F)">查找</button>
         <button class="btn ghost" id="notes-btn" title="人物、设定、大纲">设定</button>
@@ -45,10 +46,14 @@ title: 写作
       <button data-act="delete-book" class="danger">删除作品</button>
     </div>
     <div class="menu right" id="more-menu" hidden>
+      <button data-act="save-as" class="fs-only">另存为新文件…</button>
+      <button data-act="open-file" class="fs-only">打开稿件文件…</button>
+      <button data-act="unlink-file" class="fs-only">取消关联文件</button>
+      <hr class="fs-only">
       <button data-act="export-chapter">导出本章 TXT</button>
       <button data-act="export-book">导出全书 TXT</button>
       <hr>
-      <button data-act="backup">备份全部数据 (JSON)</button>
+      <button data-act="backup">下载备份 (JSON)</button>
       <button data-act="restore">从备份恢复…</button>
       <hr>
       <button data-act="font-down">字号 −</button>
@@ -66,7 +71,7 @@ title: 写作
       <ol class="chapters" id="chapters"></ol>
       <div class="side-foot">
         <div>全书 <b id="book-count">0</b> 字 · <span id="chapter-total">0</span> 章</div>
-        <p class="hint">数据只保存在当前浏览器，请定期「更多 → 备份」。</p>
+        <p class="hint">点顶栏「保存」把稿件存到电脑文件，之后会自动保存到该文件。</p>
       </div>
     </aside>
 

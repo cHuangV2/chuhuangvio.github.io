@@ -99,6 +99,14 @@ select:hover { background: var(--hover); }
 
 .save-state { font-size: 12px; color: var(--muted); margin-right: 4px; white-space: nowrap; }
 .save-state.bad { color: var(--danger); font-weight: 600; }
+.save-state.warn { color: #b45309; }
+.save-state.ok { color: #15803d; }
+.btn.primary { background: var(--fg); color: var(--paper); font-weight: 600; }
+.btn.primary:hover { background: var(--accent); }
+@media (prefers-color-scheme: dark) {
+  .save-state.warn { color: #fbbf24; }
+  .save-state.ok { color: #4ade80; }
+}
 
 /* 下拉菜单 */
 .menu {
@@ -284,6 +292,7 @@ select:hover { background: var(--hover); }
     box-shadow: -4px 0 20px rgba(0,0,0,.15);
   }
   .tb-center, .home, .sep, .save-state { display: none; }
+  .btn.primary { padding: 6px 10px; }
   .tb-right .btn { padding: 6px 7px; }
   .paper { padding: 20px 16px 0; }
   #updated-at { display: none; }

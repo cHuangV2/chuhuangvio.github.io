@@ -46,25 +46,169 @@
     return defaults();
   }
 
+  // 两层保存：浏览器 localStorage 作即时缓存；关联了电脑文件时，再自动写入该文件
   var saveTimer = null;
   var storageOk = true;
   function save() {
+    saveTimer = null;
     try {
       localStorage.setItem(KEY, JSON.stringify(state));
       storageOk = true;
-      setSaveState('已保存');
     } catch (e) {
       storageOk = false;
-      setSaveState('保存失败！请立即备份', true);
     }
+    queueFileWrite();
+    renderSaveState();
   }
   function scheduleSave() {
-    setSaveState('保存中…');
     clearTimeout(saveTimer);
     saveTimer = setTimeout(save, 400);
+    renderSaveState();
   }
-  function flush() { if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; save(); } }
-  function setSaveState(t, bad) { els.saveState.textContent = t; els.saveState.classList.toggle('bad', !!bad); }
+  function flush() { if (saveTimer) { clearTimeout(saveTimer); save(); } }
+
+  // ---------- 保存到电脑文件 ----------
+  var fsSupported = typeof window.showSaveFilePicker === 'function';
+  var file = { handle: null, dirty: false, writing: false, needPerm: false, timer: null, savedAt: null };
+  var FILE_TYPES = [{ description: '网文稿件', accept: { 'application/json': ['.json'] } }];
+
+  // 文件句柄存进 IndexedDB，下次打开编辑器还能找到同一个文件
+  function idb(mode, fn) {
+    return new Promise(function (resolve, reject) {
+      var req = indexedDB.open('wn-editor', 1);
+      req.onupgradeneeded = function () { req.result.createObjectStore('kv'); };
+      req.onerror = function () { reject(req.error); };
+      req.onsuccess = function () {
+        var tx, r;
+        try {
+          tx = req.result.transaction('kv', mode);
+          r = fn(tx.objectStore('kv'));
+        } catch (e) { reject(e); return; }
+        tx.oncomplete = function () { resolve(r && r.result); };
+        tx.onerror = function () { reject(tx.error); };
+      };
+    });
+  }
+  function rememberHandle(h) {
+    return idb('readwrite', function (s) { return h ? s.put(h, 'file') : s.delete('file'); }).catch(function () {});
+  }
+
+  function renderSaveState() {
+    var t, cls = '';
+    if (!storageOk && !file.handle) { t = '浏览器存储失败！请立即保存到文件'; cls = 'bad'; }
+    else if (file.handle && file.needPerm) { t = '点「保存」继续写入 ' + file.handle.name; cls = 'warn'; }
+    else if (saveTimer || file.dirty || file.writing) { t = '保存中…'; }
+    else if (file.handle) { t = '✓ 已存到 ' + file.handle.name + (file.savedAt ? ' · ' + file.savedAt : ''); cls = 'ok'; }
+    else { t = '仅存于浏览器'; cls = 'warn'; }
+    els.saveState.textContent = t;
+    els.saveState.className = 'save-state ' + cls;
+    els.saveState.title = file.handle
+      ? '稿件会自动写入电脑上的「' + file.handle.name + '」'
+      : '稿件目前只在这个浏览器里，点「保存」存到电脑文件更安全';
+  }
+
+  function queueFileWrite() {
+    if (!file.handle) return;
+    file.dirty = true;
+    clearTimeout(file.timer);
+    file.timer = setTimeout(writeFile, 1200);
+  }
+
+  function writeFile() {
+    if (!file.handle || file.needPerm) return Promise.resolve(false);
+    if (file.writing) { queueFileWrite(); return Promise.resolve(false); }
+    file.writing = true;
+    file.dirty = false;
+    renderSaveState();
+    var data = JSON.stringify(state, null, 2);
+    var h = file.handle;
+    return h.queryPermission({ mode: 'readwrite' }).then(function (p) {
+      if (p !== 'granted') { file.needPerm = true; file.dirty = true; return false; }
+      return h.createWritable().then(function (w) {
+        return w.write(data).then(function () { return w.close(); });
+      }).then(function () {
+        file.savedAt = new Date().toLocaleTimeString('zh-CN', { hour12: false, hour: '2-digit', minute: '2-digit' });
+        return true;
+      });
+    }).catch(function (e) {
+      file.dirty = true;
+      toast('写入文件失败：' + e.message);
+      return false;
+    }).then(function (ok) {
+      file.writing = false;
+      renderSaveState();
+      return ok;
+    });
+  }
+
+  function linkFile(h) {
+    file.handle = h; file.needPerm = false; file.savedAt = null;
+    rememberHandle(h);
+    return writeFile();
+  }
+
+  function saveAsNewFile() {
+    if (!fsSupported) return downloadBackup();
+    flush();
+    return window.showSaveFilePicker({ suggestedName: '网文稿件.json', types: FILE_TYPES })
+      .then(linkFile)
+      .then(function (ok) { if (ok) toast('已保存到电脑文件，之后会自动保存到这里'); })
+      .catch(function (e) { if (e.name !== 'AbortError') toast('保存失败：' + e.message); });
+  }
+
+  // 「保存」按钮 / Ctrl+S
+  function saveNow() {
+    flush();
+    if (!fsSupported) return downloadBackup();
+    if (!file.handle) return saveAsNewFile();
+    var h = file.handle;
+    // requestPermission 必须在用户点击中直接调用
+    return h.requestPermission({ mode: 'readwrite' }).then(function (p) {
+      if (p !== 'granted') { toast('没有获得写入权限'); return; }
+      file.needPerm = false;
+      clearTimeout(file.timer);
+      return writeFile().then(function (ok) { if (ok) toast('已保存到 ' + h.name); });
+    }).catch(function (e) { toast('保存失败：' + e.message); });
+  }
+
+  function openFromFile() {
+    if (!fsSupported) { els.restoreInput.click(); return; }
+    window.showOpenFilePicker({ types: FILE_TYPES }).then(function (hs) {
+      var h = hs[0];
+      return h.getFile().then(function (f) { return f.text(); }).then(function (text) {
+        var s = JSON.parse(text);
+        if (!s || !Array.isArray(s.books) || !s.books.length) throw new Error('不是网文稿件文件');
+        if (!confirm('打开「' + h.name + '」（' + s.books.length + ' 部作品），替换编辑器里的当前内容？')) return;
+        flush();
+        state = Object.assign(defaults(), s);
+        file.handle = h; file.needPerm = true; file.savedAt = null;
+        rememberHandle(h);
+        renderAll(); save();
+        toast('已打开，点一次「保存」授权后会自动写回这个文件');
+      });
+    }).catch(function (e) { if (e.name !== 'AbortError') alert('无法打开文件：' + e.message); });
+  }
+
+  function unlinkFile() {
+    if (!file.handle) { toast('当前没有关联文件'); return; }
+    var name = file.handle.name;
+    file.handle = null; file.dirty = false; file.needPerm = false;
+    clearTimeout(file.timer);
+    rememberHandle(null);
+    renderSaveState();
+    toast('已取消关联「' + name + '」，文件本身不受影响');
+  }
+
+  function restoreHandle() {
+    if (!fsSupported || !window.indexedDB) { renderSaveState(); return; }
+    idb('readonly', function (s) { return s.get('file'); }).then(function (h) {
+      if (!h) return;
+      file.handle = h;
+      return h.queryPermission({ mode: 'readwrite' }).then(function (p) {
+        file.needPerm = p !== 'granted';
+      });
+    }).catch(function () {}).then(renderSaveState);
+  }
 
   function book() {
     return state.books.find(function (b) { return b.id === state.bookId; }) || state.books[0];
@@ -293,6 +437,12 @@
     setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
   }
 
+  function downloadBackup() {
+    flush();
+    download('网文备份-' + today() + '.json', JSON.stringify(state, null, 2), 'application/json');
+    toast(fsSupported ? '已下载备份' : '已下载备份文件（当前浏览器不支持直接写入文件，推荐用电脑版 Chrome / Edge）');
+  }
+
   var actions = {
     'new-book': function () {
       var t = prompt('新作品名称', '未命名作品');
@@ -332,11 +482,10 @@
       }).join('\n\n\n') + '\n';
       download(b.title + '.txt', out);
     },
-    'backup': function () {
-      flush();
-      download('网文备份-' + today() + '.json', JSON.stringify(state, null, 2), 'application/json');
-      toast('已导出备份');
-    },
+    'save-as': saveAsNewFile,
+    'open-file': openFromFile,
+    'unlink-file': unlinkFile,
+    'backup': downloadBackup,
     'restore': function () { els.restoreInput.click(); },
     'font-down': function () { state.fontSize = Math.max(14, state.fontSize - 1); applySettings(); save(); },
     'font-up': function () { state.fontSize = Math.min(30, state.fontSize + 1); applySettings(); save(); },
@@ -468,7 +617,7 @@
 
   document.addEventListener('keydown', function (e) {
     var mod = e.ctrlKey || e.metaKey;
-    if (mod && e.key.toLowerCase() === 's') { e.preventDefault(); flush(); save(); toast(storageOk ? '已保存' : '保存失败，请立即备份'); }
+    if (mod && e.key.toLowerCase() === 's') { e.preventDefault(); saveNow(); }
     else if (mod && e.key.toLowerCase() === 'f') { e.preventDefault(); openFind(); }
     else if (e.key === 'Escape') {
       if (els.app.classList.contains('focus')) els.app.classList.remove('focus');
@@ -478,7 +627,13 @@
     }
   });
 
-  window.addEventListener('beforeunload', flush);
+  $('save-btn').addEventListener('click', saveNow);
+
+  window.addEventListener('beforeunload', function (e) {
+    flush();
+    // 还有内容没写进电脑文件时，关闭前提醒
+    if (file.handle && (file.dirty || file.writing || file.needPerm)) { e.preventDefault(); e.returnValue = ''; }
+  });
   document.addEventListener('visibilitychange', function () { if (document.hidden) flush(); });
 
   // 其他标签页修改了数据时同步
@@ -488,5 +643,7 @@
   });
 
   if (window.innerWidth < 800) state.sideOpen = false;
+  if (!fsSupported) document.querySelectorAll('.fs-only').forEach(function (el) { el.hidden = true; });
   renderAll();
+  restoreHandle();
 })();

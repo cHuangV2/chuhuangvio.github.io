@@ -1,1 +1,29 @@
-theme: jekyll-theme-hacker
+title: cHuangV3
+tagline: 写作、编程、学习
+description: 记录与思考。
+author: cHuangV3
+url: https://chuangv3.github.io
+baseurl: ""
+lang: zh-CN
+timezone: Asia/Shanghai
+
+github_username: cHuangV3
+
+# 文章地址形如 /articles/2026-09-28/hello-world/
+permalink: /articles/:year-:month-:day/:title/
+
+markdown: kramdown
+kramdown:
+  input: GFM
+  syntax_highlighter: rouge
+
+plugins:
+  - jekyll-feed
+
+feed:
+  path: feed.xml
+
+exclude:
+  - README.md
+  - Gemfile
+  - Gemfile.lock

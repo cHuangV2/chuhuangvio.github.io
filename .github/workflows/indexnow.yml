@@ -1,0 +1,27 @@
+# 每次发布到 master 后，把站点地图里的网址推送给 IndexNow（必应、Yandex、Seznam、Naver 等共享）
+name: IndexNow
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+jobs:
+  submit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 等待 GitHub Pages 部署完成
+        run: sleep 150
+      - name: 推送站点地图中的网址
+        env:
+          HOST: chuangv3.github.io
+          KEY: 02240168d7a0496bb07dc3359aa4abbf
+        run: |
+          urls=$(curl -sf "https://$HOST/sitemap.xml" | grep -o '<loc>[^<]*' | sed 's/<loc>//' | jq -R . | jq -s .)
+          echo "$urls"
+          jq -n --arg host "$HOST" --arg key "$KEY" --argjson urls "$urls" \
+            '{host: $host, key: $key, keyLocation: "https://\($host)/\($key).txt", urlList: $urls}' > body.json
+          code=$(curl -s -o resp.txt -w '%{http_code}' -X POST https://api.indexnow.org/indexnow \
+            -H 'Content-Type: application/json; charset=utf-8' --data @body.json)
+          echo "HTTP $code"; cat resp.txt
+          case "$code" in 200|202) ;; *) exit 1 ;; esac

@@ -1,0 +1,20 @@
+{% assign years = site.posts | group_by_exp: "post", "post.date | date: '%Y'" %}
+{% if years.size == 0 %}
+<p class="empty">还没有文章。</p>
+{% endif %}
+{% for year in years %}
+<section class="year-group">
+  <h2 class="year"><span>{{ year.name }}</span><small>{{ year.items.size }} 篇</small></h2>
+  <ul class="article-list">
+    {% for post in year.items %}
+    <li>
+      <a href="{{ post.url | relative_url }}">
+        <time datetime="{{ post.date | date_to_xmlschema }}">{{ post.date | date: '%m月%d日' }}</time>
+        <span class="title">{{ post.title }}</span>
+        <span class="arrow" aria-hidden="true">→</span>
+      </a>
+    </li>
+    {% endfor %}
+  </ul>
+</section>
+{% endfor %}

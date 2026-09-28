@@ -1,0 +1,52 @@
+---
+layout: default
+---
+{% assign chars = content | strip_html | strip_newlines | remove: ' ' | size %}
+{% assign minutes = chars | divided_by: 400 | plus: 1 %}
+<article class="post">
+  <header class="post-header">
+    <p class="post-meta">
+      <time datetime="{{ page.date | date_to_xmlschema }}">{{ page.date | date: '%Y年%m月%d日' }}</time>
+      <span>约 {{ chars }} 字</span>
+      <span>约 {{ minutes }} 分钟</span>
+    </p>
+    <h1 class="post-title">{{ page.title }}</h1>
+    {% if page.subtitle %}<p class="post-subtitle">{{ page.subtitle }}</p>{% endif %}
+  </header>
+
+  <nav class="toc" id="toc" hidden>
+    <p class="toc-title">本文目录</p>
+    <ol></ol>
+  </nav>
+
+  <div class="post-body" id="post-body">
+    {{ content }}
+  </div>
+
+  <nav class="post-nav">
+    {% if page.previous %}
+    <a class="prev" href="{{ page.previous.url | relative_url }}"><small>← 上一篇</small>{{ page.previous.title }}</a>
+    {% else %}<span></span>{% endif %}
+    {% if page.next %}
+    <a class="next" href="{{ page.next.url | relative_url }}"><small>下一篇 →</small>{{ page.next.title }}</a>
+    {% endif %}
+  </nav>
+</article>
+
+<script>
+  (function () {
+    var heads = document.querySelectorAll('#post-body h2');
+    if (heads.length < 2) return;
+    var list = document.querySelector('#toc ol');
+    heads.forEach(function (h, i) {
+      if (!h.id) h.id = 'section-' + (i + 1);
+      var li = document.createElement('li');
+      var a = document.createElement('a');
+      a.href = '#' + h.id;
+      a.textContent = h.textContent;
+      li.appendChild(a);
+      list.appendChild(li);
+    });
+    document.getElementById('toc').hidden = false;
+  })();
+</script>

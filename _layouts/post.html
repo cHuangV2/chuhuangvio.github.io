@@ -23,6 +23,12 @@ layout: default
     {{ content }}
   </div>
 
+  {% if page.tags.size > 0 %}
+  <ul class="tags">
+    {% for tag in page.tags %}<li>#{{ tag }}</li>{% endfor %}
+  </ul>
+  {% endif %}
+
   <nav class="post-nav">
     {% if page.previous %}
     <a class="prev" href="{{ page.previous.url | relative_url }}"><small>← 上一篇</small>{{ page.previous.title }}</a>

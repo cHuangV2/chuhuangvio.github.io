@@ -1,0 +1,116 @@
+---
+layout: null
+sitemap: false
+title: 写作
+---
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>写作 · {{ site.title }}</title>
+  <link rel="icon" href="{{ '/favicon.svg' | relative_url }}" type="image/svg+xml">
+  <link rel="stylesheet" href="{{ '/assets/editor/editor.css' | relative_url }}">
+</head>
+<body>
+  <div class="app" id="app">
+    <header class="topbar">
+      <div class="tb-left">
+        <button class="icon-btn" id="toggle-side" title="章节列表" aria-label="章节列表">☰</button>
+        <a class="home" href="{{ '/' | relative_url }}" title="返回博客">{{ site.title }}</a>
+        <span class="sep">/</span>
+        <select id="book-select" aria-label="选择作品"></select>
+        <button class="btn ghost" id="book-menu-btn" aria-haspopup="true">作品 ▾</button>
+      </div>
+      <div class="tb-center">
+        <div class="today" title="今日净增字数 / 日更目标（点击修改目标）" id="today-box">
+          <span>今日 <b id="today-count">0</b> / <span id="goal">4000</span></span>
+          <div class="bar"><i id="today-bar"></i></div>
+        </div>
+      </div>
+      <div class="tb-right">
+        <span class="save-state" id="save-state">已保存</span>
+        <button class="btn ghost" id="format-btn" title="一键排版：去多余空白、首行缩进">排版</button>
+        <button class="btn ghost" id="find-btn" title="查找替换 (Ctrl+F)">查找</button>
+        <button class="btn ghost" id="notes-btn" title="人物、设定、大纲">设定</button>
+        <button class="btn ghost" id="focus-btn" title="专注模式 (Esc 退出)">专注</button>
+        <button class="btn ghost" id="more-btn" aria-haspopup="true">更多 ▾</button>
+      </div>
+    </header>
+
+    <div class="menu" id="book-menu" hidden>
+      <button data-act="new-book">新建作品</button>
+      <button data-act="rename-book">重命名作品</button>
+      <button data-act="delete-book" class="danger">删除作品</button>
+    </div>
+    <div class="menu right" id="more-menu" hidden>
+      <button data-act="export-chapter">导出本章 TXT</button>
+      <button data-act="export-book">导出全书 TXT</button>
+      <hr>
+      <button data-act="backup">备份全部数据 (JSON)</button>
+      <button data-act="restore">从备份恢复…</button>
+      <hr>
+      <button data-act="font-down">字号 −</button>
+      <button data-act="font-up">字号 ＋</button>
+      <button data-act="toggle-indent">回车自动缩进：<span id="indent-state">开</span></button>
+      <button data-act="set-goal">设置日更目标…</button>
+    </div>
+    <input type="file" id="restore-input" accept="application/json,.json" hidden>
+
+    <aside class="side" id="side">
+      <div class="side-head">
+        <span>章节</span>
+        <button class="btn small" id="new-chapter">＋ 新章节</button>
+      </div>
+      <ol class="chapters" id="chapters"></ol>
+      <div class="side-foot">
+        <div>全书 <b id="book-count">0</b> 字 · <span id="chapter-total">0</span> 章</div>
+        <p class="hint">数据只保存在当前浏览器，请定期「更多 → 备份」。</p>
+      </div>
+    </aside>
+
+    <main class="main">
+      <div class="findbar" id="findbar" hidden>
+        <input id="find-input" placeholder="查找" aria-label="查找">
+        <input id="replace-input" placeholder="替换为" aria-label="替换为">
+        <span class="find-count" id="find-count"></span>
+        <button class="btn small" id="find-next">下一个</button>
+        <button class="btn small" id="replace-all">全部替换</button>
+        <label class="scope"><input type="checkbox" id="replace-book"> 全书</label>
+        <button class="icon-btn" id="find-close" aria-label="关闭">✕</button>
+      </div>
+
+      <div class="paper">
+        <div class="chapter-head">
+          <input class="chapter-title" id="chapter-title" placeholder="章节标题" aria-label="章节标题">
+          <div class="chapter-tools">
+            <button class="icon-btn" id="ch-up" title="上移">↑</button>
+            <button class="icon-btn" id="ch-down" title="下移">↓</button>
+            <button class="icon-btn danger" id="ch-del" title="删除本章">🗑</button>
+          </div>
+        </div>
+        <textarea id="text" spellcheck="false" placeholder="　　从这里开始写……"></textarea>
+      </div>
+
+      <footer class="status">
+        <span>本章 <b id="chapter-count">0</b> 字</span>
+        <span id="cursor-pos"></span>
+        <span id="updated-at"></span>
+      </footer>
+    </main>
+
+    <aside class="notes" id="notes" hidden>
+      <div class="side-head">
+        <span>设定 · 大纲 · 人物</span>
+        <button class="icon-btn" id="notes-close" aria-label="关闭">✕</button>
+      </div>
+      <textarea id="notes-text" spellcheck="false" placeholder="主角：&#10;金手指：&#10;世界观：&#10;&#10;本卷大纲：&#10;1. &#10;2. &#10;&#10;伏笔清单："></textarea>
+    </aside>
+  </div>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <script src="{{ '/assets/editor/editor.js' | relative_url }}"></script>
+</body>
+</html>

@@ -281,6 +281,9 @@ main.wrap { flex: 1; padding-top: 48px; padding-bottom: 64px; }
 .post-body table { border-collapse: collapse; width: 100%; font-size: 16px; display: block; overflow-x: auto; }
 .post-body th, .post-body td { border: 1px solid var(--line); padding: 6px 10px; text-align: left; }
 
+.tags { list-style: none; display: flex; flex-wrap: wrap; gap: 8px; margin: 40px 0 0; padding: 0; }
+.tags li { font-size: 13px; color: var(--muted); background: var(--code-bg); padding: 3px 10px; border-radius: 99px; }
+
 .post-nav {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -324,4 +327,19 @@ main.wrap { flex: 1; padding-top: 48px; padding-bottom: 64px; }
   .post-body { font-size: 18px; }
   .post-nav { grid-template-columns: 1fr; }
   .post-nav .next { grid-column: 1; }
+}
+
+/* 代码高亮（rouge） */
+.highlight .c, .highlight .c1, .highlight .cm, .highlight .cs { color: var(--muted); font-style: italic; }
+.highlight .k, .highlight .kd, .highlight .kn, .highlight .kr, .highlight .nt { color: #a626a4; }
+.highlight .s, .highlight .s1, .highlight .s2, .highlight .sb, .highlight .sx { color: #50a14f; }
+.highlight .mi, .highlight .mf, .highlight .m, .highlight .kc { color: #b76b01; }
+.highlight .nf, .highlight .nx, .highlight .na { color: #4078f2; }
+.highlight .nv, .highlight .vi, .highlight .no { color: #e45649; }
+@media (prefers-color-scheme: dark) {
+  .highlight .k, .highlight .kd, .highlight .kn, .highlight .kr, .highlight .nt { color: #c678dd; }
+  .highlight .s, .highlight .s1, .highlight .s2, .highlight .sb, .highlight .sx { color: #98c379; }
+  .highlight .mi, .highlight .mf, .highlight .m, .highlight .kc { color: #d19a66; }
+  .highlight .nf, .highlight .nx, .highlight .na { color: #61afef; }
+  .highlight .nv, .highlight .vi, .highlight .no { color: #e06c75; }
 }

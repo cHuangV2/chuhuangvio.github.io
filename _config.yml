@@ -1,7 +1,22 @@
 title: cHuangV3
 tagline: 写作、编程、学习
-description: 记录与思考。
+description: cHuangV3 的个人博客：前端开发、AI 编程、效率工具与写作实践，记录真实踩坑与可复用的方法。
 author: cHuangV3
+locale: zh_CN
+# 默认分享卡片图（微信、Twitter/X、Telegram 等链接预览）
+image: /assets/img/og-default.png
+keywords: [前端, AI 编程, Jekyll, GitHub Pages, 效率工具, 个人博客]
+
+social:
+  name: cHuangV3
+  links:
+    - https://github.com/cHuangV3
+
+# 搜索引擎站点验证：在对应平台拿到验证码后填入
+# webmaster_verifications:
+#   google: xxxxxxxx
+#   bing: xxxxxxxx
+#   baidu: xxxxxxxx
 url: https://chuangv3.github.io
 baseurl: ""
 lang: zh-CN
@@ -19,7 +34,7 @@ home:
   section_em: 一本公开的笔记本
   recent_count: 6
 
-# 文章地址形如 /articles/2026-09-28/hello-world/
+# 文章地址形如 /articles/2026-09-28/my-post/
 permalink: /articles/:year-:month-:day/:title/
 
 markdown: kramdown
@@ -29,9 +44,18 @@ kramdown:
 
 plugins:
   - jekyll-feed
+  - jekyll-seo-tag
+  - jekyll-sitemap
 
 feed:
   path: feed.xml
+
+defaults:
+  - scope:
+      path: ""
+      type: posts
+    values:
+      layout: post
 
 exclude:
   - README.md
